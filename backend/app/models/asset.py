@@ -1,7 +1,6 @@
-from app.db import base
+from app.db import Base
 from sqlalchemy import Column, Integer, DateTime, String, Enum, ForeignKey
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import declarative_base
 from datetime import datetime
 import enum
 

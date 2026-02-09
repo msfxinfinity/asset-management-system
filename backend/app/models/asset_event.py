@@ -1,7 +1,6 @@
-from app.db import base
+from app.db import Base
 from sqlalchemy import Column,  Integer, String, DateTime, Enum, ForeignKey
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.declarative import declarative_base
 from datetime import datetime
 import enum
 
@@ -12,7 +11,7 @@ class AssetEventType(enum.Enum):
     DELETED = "deleted"
 
 class AssetEvent(Base):
-    __table_name__ = "asset_events"
+    __tablename__ = "asset_events"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
 
@@ -27,7 +26,7 @@ class AssetEvent(Base):
         Integer,
         ForeignKey("tenants.id"),
         nullable=False,
-        Index=True
+        index=True
     )
 
     event_type = Column(
