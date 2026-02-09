@@ -1,10 +1,9 @@
+from app.db import base
 from sqlalchemy import Column,  Integer, String, DateTime, Enum, ForeignKey
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.declarative import declarative_base
 from datetime import datetime
 import enum
-
-Base = declarative_base()
 
 class AssetEventType(enum.Enum):
     CREATED = "created"

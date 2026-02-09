@@ -1,10 +1,10 @@
+from app.db import base
 from sqlalchemy import Column, Integer, DateTime, String, Enum, ForeignKey
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import declarative_base
 from datetime import datetime
 import enum
 
-Base = declarative_base()
 class AssetStatus(enum.Enum):
     ACTIVE = "ACTIVE"
     ARCHIVED = "ARCHIVED"
