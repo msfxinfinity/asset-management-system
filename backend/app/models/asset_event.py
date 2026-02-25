@@ -1,14 +1,20 @@
-from app.db import Base
-from sqlalchemy import Column,  Integer, String, DateTime, Enum, ForeignKey
-from sqlalchemy.dialects.postgresql import JSONB
-from datetime import datetime
 import enum
 
+from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer, String
+from sqlalchemy.dialects.postgresql import JSONB
+
+from app.db import Base
+from app.utils.time import utcnow
+
+
 class AssetEventType(enum.Enum):
-    CREATED = "created"
-    UPDATED = "updated"
-    ARCHIVED = "archived"
-    DELETED = "deleted"
+    CREATED = "CREATED"
+    UPDATED = "UPDATED"
+    ACTIVATED = "ACTIVATED"
+    ARCHIVED = "ARCHIVED"
+    GENERATED = "GENERATED"
+    DELETED = "DELETED"
+
 
 class AssetEvent(Base):
     __tablename__ = "asset_events"
@@ -34,10 +40,9 @@ class AssetEvent(Base):
         nullable=False
     )
 
-    user_id = Column(Integer,nullable=False)
+    user_id = Column(Integer, nullable=False)
     user_role = Column(String, nullable=False)
 
-    geolocation = Column(JSONB, nullable=False)
+    geolocation = Column(JSONB, nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-
+    created_at = Column(DateTime, default=utcnow, nullable=False)
