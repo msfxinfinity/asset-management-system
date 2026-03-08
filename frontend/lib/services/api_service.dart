@@ -1,5 +1,4 @@
 import "dart:convert";
-
 import "package:http/http.dart" as http;
 import "package:shared_preferences/shared_preferences.dart";
 
@@ -7,6 +6,7 @@ import "../models/admin.dart";
 import "../models/asset.dart";
 import "../models/auth.dart";
 
+/// Custom exception class for capturing and communicating detailed API error states.
 class ApiException implements Exception {
   final int statusCode;
   final String message;
@@ -22,26 +22,39 @@ class ApiException implements Exception {
   String toString() => message;
 }
 
+/// Specialized response for QR scanning operations.
+class QrLookupResponse {
+  final Asset asset;
+  final bool isNew;
+  QrLookupResponse({required this.asset, required this.isNew});
+}
+
+/// Centralized service for all communication between the Flutter frontend and the FastAPI backend.
+/// Handles authentication headers, session persistence, and error normalization.
 class ApiService {
   static const String baseUrl = String.fromEnvironment(
     "API_BASE_URL",
     defaultValue: "http://localhost:8000",
   );
+  
   static const String sessionTokenKey = "ams_access_token";
   static const String sessionUserKey = "ams_user_profile";
 
   static String? _accessToken;
 
+  /// Sets the JWT token for the current active session.
   static void setAccessToken(String? token) {
     _accessToken = token;
   }
 
+  /// Persists the user session to local storage for automatic re-authentication.
   static Future<void> saveSession(String token, UserProfile user) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(sessionTokenKey, token);
     await prefs.setString(sessionUserKey, jsonEncode(user.toJson()));
   }
 
+  /// Clears all local session data (Logout).
   static Future<void> clearSession() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(sessionTokenKey);
@@ -49,6 +62,7 @@ class ApiService {
     setAccessToken(null);
   }
 
+  /// Retrieves default headers, automatically injecting the Bearer token if available.
   static Map<String, String> _headers({bool includeJson = true}) {
     final headers = <String, String>{};
     if (includeJson) {
@@ -60,53 +74,48 @@ class ApiService {
     return headers;
   }
 
-  static ApiException _requestException(http.Response response) {
-    Map<String, dynamic>? payload;
+  /// Standard error handler to convert HTTP responses into structured [ApiException]s.
+  static ApiException _requestException(http.Response res) {
     try {
-      final body = jsonDecode(response.body);
-      if (body is Map<String, dynamic>) {
-        payload = body;
-        final detail = body["detail"];
-        if (detail != null) {
-          return ApiException(
-            statusCode: response.statusCode,
-            message: detail.toString(),
-            payload: payload,
-          );
-        }
-      }
+      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      final msg = body["detail"]?.toString() ?? "API Request Failed (${res.statusCode})";
+      return ApiException(statusCode: res.statusCode, message: msg, payload: body);
     } catch (_) {
-      payload = null;
+      return ApiException(statusCode: res.statusCode, message: "Critical Server Error");
     }
-    return ApiException(
-      statusCode: response.statusCode,
-      message: "Request failed with ${response.statusCode}",
-      payload: payload,
-    );
   }
 
+  // --- AUTHENTICATION ENDPOINTS ---
+
+  /// Authenticats a user and initializes the session.
   static Future<LoginResponse> login({
     required String username,
     required String password,
   }) async {
-    final response = await http.post(
-      Uri.parse("$baseUrl/auth/login"),
-      headers: _headers(),
-      body: jsonEncode({
-        "username": username.trim().toLowerCase(),
-        "password": password,
-      }),
-    );
-    if (response.statusCode != 200) {
-      throw _requestException(response);
+    try {
+      final response = await http.post(
+        Uri.parse("$baseUrl/auth/login"),
+        headers: _headers(),
+        body: jsonEncode({
+          "username": username.trim().toLowerCase(),
+          "password": password,
+        }),
+      );
+      if (response.statusCode != 200) {
+        throw _requestException(response);
+      }
+      final payload = LoginResponse.fromJson(
+        jsonDecode(response.body) as Map<String, dynamic>,
+      );
+      setAccessToken(payload.accessToken);
+      return payload;
+    } catch (e) {
+      if (e is ApiException) rethrow;
+      throw ApiException(statusCode: 0, message: "Network connection error. Please check your internet.");
     }
-    final payload = LoginResponse.fromJson(
-      jsonDecode(response.body) as Map<String, dynamic>,
-    );
-    setAccessToken(payload.accessToken);
-    return payload;
   }
 
+  /// Retrieves the profile of the currently logged-in user.
   static Future<UserProfile> fetchMe() async {
     final response = await http.get(
       Uri.parse("$baseUrl/auth/me"),
@@ -118,94 +127,106 @@ class ApiService {
     return UserProfile.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
   }
 
-  static Future<void> forgotPassword(String username) async {
+  /// Triggers the background account recovery process.
+  static Future<String> forgotPassword(String username) async {
     final response = await http.post(
       Uri.parse("$baseUrl/auth/forgot-password"),
       headers: _headers(),
-      body: jsonEncode({"username": username.trim()}),
+      body: jsonEncode({"username": username}),
     );
-    if (response.statusCode != 200) {
-      throw _requestException(response);
-    }
+    if (response.statusCode != 200) throw _requestException(response);
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    return data["message"] as String;
   }
 
-  static Future<AssetStats> fetchStats() async {
-    final response = await http.get(
-      Uri.parse("$baseUrl/assets/stats"),
-      headers: _headers(includeJson: false),
-    );
-    if (response.statusCode != 200) {
-      throw _requestException(response);
-    }
-    return AssetStats.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
-  }
+  // --- ASSET MANAGEMENT ENDPOINTS ---
 
+  /// Fetches a paginated and filtered list of assets.
   static Future<List<Asset>> fetchAssets({
     String? query,
-    String? status,
+    String? city,
     int? departmentId,
+    String? projectName,
+    Map<String, String>? attributes,
+    DateTime? startDate,
+    DateTime? endDate,
+    String? sortBy = "newest",
+    int skip = 0,
+    int limit = 100,
   }) async {
-    final params = <String, String>{};
-    if (query != null && query.trim().isNotEmpty) {
-      params["q"] = query.trim();
+    final params = <String, String>{
+      "skip": skip.toString(),
+      "limit": limit.toString(),
+      if (sortBy != null) "sort_by": sortBy,
+    };
+    if (query != null && query.isNotEmpty) params["query"] = query;
+    if (city != null && city.isNotEmpty) params["city"] = city;
+    if (departmentId != null) params["department_id"] = departmentId.toString();
+    if (projectName != null) params["project_name"] = projectName;
+    if (startDate != null) params["start_date"] = startDate.toIso8601String();
+    if (endDate != null) params["end_date"] = endDate.toIso8601String();
+    if (attributes != null && attributes.isNotEmpty) {
+      params["attributes"] = jsonEncode(attributes);
     }
-    if (status != null && status.trim().isNotEmpty && status != "ALL") {
-      params["status"] = status.trim().toUpperCase();
-    }
-    if (departmentId != null) {
-      params["department_id"] = "$departmentId";
-    }
+
     final uri = Uri.parse("$baseUrl/assets/").replace(queryParameters: params);
     final response = await http.get(uri, headers: _headers(includeJson: false));
-    if (response.statusCode != 200) {
-      throw _requestException(response);
-    }
+    if (response.statusCode != 200) throw _requestException(response);
+    
     final data = jsonDecode(response.body) as List<dynamic>;
-    return data
-        .map((e) => Asset.fromJson(e as Map<String, dynamic>))
-        .toList(growable: false);
+    return data.map((e) => Asset.fromJson(e as Map<String, dynamic>)).toList();
   }
 
-  static Future<Asset> fetchAsset(int assetId) async {
+  /// Specialized lookup for QR codes. Returns existing asset or placeholders for registration.
+  static Future<QrLookupResponse> fetchAssetByQr(String token) async {
     final response = await http.get(
-      Uri.parse("$baseUrl/assets/$assetId"),
+      Uri.parse("$baseUrl/assets/by-qr/$token"),
       headers: _headers(includeJson: false),
     );
-    if (response.statusCode != 200) {
+    if (response.statusCode != 200 && response.statusCode != 201) {
       throw _requestException(response);
     }
-    return Asset.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
-  }
-
-  static Future<Asset> fetchAssetByQr(String token) async {
-    final response = await http.get(
-      Uri.parse("$baseUrl/assets/by-token/$token"),
-      headers: _headers(includeJson: false),
+    return QrLookupResponse(
+      asset: Asset.fromJson(jsonDecode(response.body) as Map<String, dynamic>),
+      isNew: response.statusCode == 201,
     );
-    if (response.statusCode != 200) {
-      throw _requestException(response);
-    }
-    return Asset.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
   }
 
+  /// Commits a partial or full update to an asset's data.
   static Future<Asset> updateAsset({
     required int assetId,
+    int? departmentId,
     String? assetName,
-    String? assignedTo,
-    String? locationText,
+    String? city,
+    String? building,
+    String? floor,
+    String? room,
+    String? street,
+    String? locality,
+    String? postalCode,
     double? latitude,
     double? longitude,
+    String? imageUrl,
+    String? imageBase64,
     DateTime? validTill,
     Map<String, dynamic>? attributes,
   }) async {
     final body = <String, dynamic>{};
+    if (departmentId != null) body["department_id"] = departmentId;
     if (assetName != null) body["asset_name"] = assetName;
-    if (assignedTo != null) body["assigned_to"] = assignedTo;
-    if (locationText != null) body["location_text"] = locationText;
+    if (city != null) body["city"] = city;
+    if (building != null) body["building"] = building;
+    if (floor != null) body["floor"] = floor;
+    if (room != null) body["room"] = room;
+    if (street != null) body["street"] = street;
+    if (locality != null) body["locality"] = locality;
+    if (postalCode != null) body["postal_code"] = postalCode;
     if (latitude != null) body["latitude"] = latitude;
     if (longitude != null) body["longitude"] = longitude;
+    if (imageUrl != null) body["image_url"] = imageUrl;
+    if (imageBase64 != null) body["image_base64"] = imageBase64;
     if (validTill != null) body["valid_till"] = validTill.toIso8601String();
-    if (attributes != null && attributes.isNotEmpty) body["attributes"] = attributes;
+    if (attributes != null) body["attributes"] = attributes;
 
     final response = await http.patch(
       Uri.parse("$baseUrl/assets/$assetId"),
@@ -218,239 +239,10 @@ class ApiService {
     return Asset.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
   }
 
-  static Future<Asset> archiveAsset(int assetId) async {
-    final response = await http.patch(
-      Uri.parse("$baseUrl/assets/$assetId/archive"),
-      headers: _headers(),
-    );
-    if (response.statusCode != 200) {
-      throw _requestException(response);
-    }
-    return Asset.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
-  }
+  // --- REPORTING ENDPOINTS ---
 
-  static Future<Asset> activateAsset(int assetId) async {
-    final response = await http.post(
-      Uri.parse("$baseUrl/assets/$assetId/activate"),
-      headers: _headers(),
-    );
-    if (response.statusCode != 200) {
-      throw _requestException(response);
-    }
-    final payload = jsonDecode(response.body) as Map<String, dynamic>;
-    return Asset.fromJson(payload["asset"] as Map<String, dynamic>);
-  }
-
-  static Future<List<AssetEvent>> fetchAssetEvents(int assetId) async {
-    final response = await http.get(
-      Uri.parse("$baseUrl/assets/$assetId/events"),
-      headers: _headers(includeJson: false),
-    );
-    if (response.statusCode != 200) {
-      throw _requestException(response);
-    }
-    final data = jsonDecode(response.body) as List<dynamic>;
-    return data
-        .map((e) => AssetEvent.fromJson(e as Map<String, dynamic>))
-        .toList(growable: false);
-  }
-
-  static Future<List<DepartmentFieldDefinition>> fetchAssetFields(int assetId) async {
-    final response = await http.get(
-      Uri.parse("$baseUrl/assets/$assetId/fields"),
-      headers: _headers(includeJson: false),
-    );
-    if (response.statusCode != 200) {
-      throw _requestException(response);
-    }
-    final data = jsonDecode(response.body) as List<dynamic>;
-    return data
-        .map(
-          (e) => DepartmentFieldDefinition.fromJson(e as Map<String, dynamic>),
-        )
-        .toList(growable: false);
-  }
-
-  static Future<List<RoleType>> fetchRoles() async {
-    final response = await http.get(
-      Uri.parse("$baseUrl/admin/roles"),
-      headers: _headers(includeJson: false),
-    );
-    if (response.statusCode != 200) {
-      throw _requestException(response);
-    }
-    final data = jsonDecode(response.body) as List<dynamic>;
-    return data
-        .map((e) => RoleType.fromJson(e as Map<String, dynamic>))
-        .toList(growable: false);
-  }
-
-  static Future<RoleType> createRole({
-    required String name,
-    required Map<String, dynamic> permissions,
-  }) async {
-    final response = await http.post(
-      Uri.parse("$baseUrl/admin/roles"),
-      headers: _headers(),
-      body: jsonEncode({"name": name, "permissions": permissions}),
-    );
-    if (response.statusCode != 201) {
-      throw _requestException(response);
-    }
-    return RoleType.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
-  }
-
-  static Future<void> deleteRole(int roleId) async {
-    final response = await http.delete(
-      Uri.parse("$baseUrl/admin/roles/$roleId"),
-      headers: _headers(includeJson: false),
-    );
-    if (response.statusCode != 204) {
-      throw _requestException(response);
-    }
-  }
-
-  static Future<List<AdminUser>> fetchUsers() async {
-    final response = await http.get(
-      Uri.parse("$baseUrl/admin/users"),
-      headers: _headers(includeJson: false),
-    );
-    if (response.statusCode != 200) {
-      throw _requestException(response);
-    }
-    final data = jsonDecode(response.body) as List<dynamic>;
-    return data
-        .map((e) => AdminUser.fromJson(e as Map<String, dynamic>))
-        .toList(growable: false);
-  }
-
-  static Future<AdminUser> createUser({
-    required String fullName,
-    required String username,
-    required String email,
-    required String password,
-    required int roleTypeId,
-  }) async {
-    final response = await http.post(
-      Uri.parse("$baseUrl/admin/users"),
-      headers: _headers(),
-      body: jsonEncode({
-        "full_name": fullName,
-        "username": username,
-        "email": email,
-        "password": password,
-        "role_type_id": roleTypeId,
-      }),
-    );
-    if (response.statusCode != 201) {
-      throw _requestException(response);
-    }
-    return AdminUser.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
-  }
-
-  static Future<void> deleteUser(int userId) async {
-    final response = await http.delete(
-      Uri.parse("$baseUrl/admin/users/$userId"),
-      headers: _headers(includeJson: false),
-    );
-    if (response.statusCode != 204) {
-      throw _requestException(response);
-    }
-  }
-
-  static Future<List<Department>> fetchDepartments() async {
-    final response = await http.get(
-      Uri.parse("$baseUrl/admin/departments"),
-      headers: _headers(includeJson: false),
-    );
-    if (response.statusCode != 200) {
-      throw _requestException(response);
-    }
-    final data = jsonDecode(response.body) as List<dynamic>;
-    return data
-        .map((e) => Department.fromJson(e as Map<String, dynamic>))
-        .toList(growable: false);
-  }
-
-  static Future<Department> createDepartment({
-    required String name,
-    required String code,
-  }) async {
-    final response = await http.post(
-      Uri.parse("$baseUrl/admin/departments"),
-      headers: _headers(),
-      body: jsonEncode({"name": name, "code": code}),
-    );
-    if (response.statusCode != 201) {
-      throw _requestException(response);
-    }
-    return Department.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
-  }
-
-  static Future<List<DepartmentFieldDefinition>> fetchDepartmentFields(
-    int departmentId,
-  ) async {
-    final response = await http.get(
-      Uri.parse("$baseUrl/admin/departments/$departmentId/fields"),
-      headers: _headers(includeJson: false),
-    );
-    if (response.statusCode != 200) {
-      throw _requestException(response);
-    }
-    final data = jsonDecode(response.body) as List<dynamic>;
-    return data
-        .map(
-          (e) => DepartmentFieldDefinition.fromJson(e as Map<String, dynamic>),
-        )
-        .toList(growable: false);
-  }
-
-  static Future<List<DepartmentFieldDefinition>> updateDepartmentFields({
-    required int departmentId,
-    required List<DepartmentFieldDefinition> fields,
-  }) async {
-    final response = await http.put(
-      Uri.parse("$baseUrl/admin/departments/$departmentId/fields"),
-      headers: _headers(),
-      body: jsonEncode({"fields": fields.map((e) => e.toJson()).toList()}),
-    );
-    if (response.statusCode != 200) {
-      throw _requestException(response);
-    }
-    final data = jsonDecode(response.body) as List<dynamic>;
-    return data
-        .map(
-          (e) => DepartmentFieldDefinition.fromJson(e as Map<String, dynamic>),
-        )
-        .toList(growable: false);
-  }
-
-  static Future<QRBatch> createQrBatch({
-    required int quantity,
-    int? departmentId,
-    required List<String> exportFormats,
-  }) async {
-    final response = await http.post(
-      Uri.parse("$baseUrl/admin/qr-batches"),
-      headers: _headers(),
-      body: jsonEncode({
-        "quantity": quantity,
-        "department_id": departmentId,
-        "export_formats": exportFormats,
-      }),
-    );
-    if (response.statusCode != 201) {
-      throw _requestException(response);
-    }
-    return QRBatch.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
-  }
-
-  static String qrBatchDownloadUrl({
-    required int batchId,
-    required String format,
-  }) {
-    final token = Uri.encodeQueryComponent(_accessToken ?? "");
-    return "$baseUrl/admin/qr-batches/$batchId/download"
-        "?format=$format&access_token=$token";
+  /// Downloads a report from the system.
+  static String getReportUrl(String type) {
+    return "$baseUrl/admin/reports/$type/";
   }
 }

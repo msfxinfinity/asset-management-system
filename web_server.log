@@ -1,0 +1,7 @@
+::1 - - [26/Feb/2026 11:48:15] "HEAD /AssetManifest.bin.json HTTP/1.1" 200 -
+::1 - - [26/Feb/2026 11:49:37] "HEAD /AssetManifest.bin.json HTTP/1.1" 200 -
+::1 - - [26/Feb/2026 11:54:15] "HEAD /AssetManifest.bin.json HTTP/1.1" 200 -
+::1 - - [26/Feb/2026 11:55:36] code 404, message File not found
+::1 - - [26/Feb/2026 11:55:36] "HEAD /data/snowy_mountains.jpg HTTP/1.1" 404 -
+::1 - - [26/Feb/2026 11:55:50] code 404, message File not found
+::1 - - [26/Feb/2026 11:55:50] "HEAD /assets/data/snowy_mountains.jpg HTTP/1.1" 404 -

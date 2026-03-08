@@ -27,5 +27,29 @@ def issue_token(user_id: int, tenant_id: int) -> str:
     return jwt.encode(payload, _jwt_secret(), algorithm=_jwt_algorithm())
 
 
+def issue_reset_token(user_id: int) -> str:
+    now = datetime.now(tz=timezone.utc)
+    payload = {
+        "sub": str(user_id),
+        "type": "reset",
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(minutes=15)).timestamp()),
+    }
+    return jwt.encode(payload, _jwt_secret(), algorithm=_jwt_algorithm())
+
+
+def issue_image_token(user_id: int, tenant_id: int, asset_id: int) -> str:
+    now = datetime.now(tz=timezone.utc)
+    payload = {
+        "sub": str(user_id),
+        "tenant_id": tenant_id,
+        "asset_id": asset_id,
+        "type": "image_access",
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(days=7)).timestamp()), # 7 days valid
+    }
+    return jwt.encode(payload, _jwt_secret(), algorithm=_jwt_algorithm())
+
+
 def decode_token(token: str) -> dict:
     return jwt.decode(token, _jwt_secret(), algorithms=[_jwt_algorithm()])

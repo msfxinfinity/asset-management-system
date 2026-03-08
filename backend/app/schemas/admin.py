@@ -19,6 +19,18 @@ class RoleTypeCreate(BaseModel):
     name: str
     permissions: dict = Field(default_factory=lambda: dict(DEFAULT_PERMISSIONS))
 
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "name": "Supervisor",
+                "permissions": {
+                    "view_assets": True,
+                    "edit_assets": True
+                }
+            }
+        }
+    )
+
 
 class RoleTypeUpdate(BaseModel):
     name: Optional[str] = None
@@ -44,6 +56,19 @@ class UserCreate(BaseModel):
     role_type_id: int
     is_active: bool = True
 
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "full_name": "Jane Smith",
+                "username": "janesmith",
+                "email": "jane@example.com",
+                "password": "SecurePassword123!",
+                "role_type_id": 2,
+                "is_active": True
+            }
+        }
+    )
+
 
 class UserUpdate(BaseModel):
     full_name: Optional[str] = None
@@ -64,6 +89,8 @@ class UserResponse(BaseModel):
     username: str
     email: EmailStr
     is_active: bool
+    is_superadmin: bool = False
+    is_primary: bool = False
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -72,6 +99,15 @@ class UserResponse(BaseModel):
 class DepartmentCreate(BaseModel):
     name: str
     code: str
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "name": "Mechanical Engineering",
+                "code": "MECH"
+            }
+        }
+    )
 
 
 class DepartmentResponse(BaseModel):
@@ -111,21 +147,3 @@ class DepartmentFieldDefinitionResponse(BaseModel):
 
 class DepartmentFieldsUpdateRequest(BaseModel):
     fields: List[DepartmentFieldDefinitionInput]
-
-
-class QRBatchCreateRequest(BaseModel):
-    quantity: int
-    department_id: Optional[int] = None
-    export_formats: List[str] = Field(default_factory=lambda: ["pdf", "zip"])
-
-
-class QRBatchResponse(BaseModel):
-    id: int
-    tenant_id: int
-    department_id: Optional[int] = None
-    created_by_user_id: int
-    quantity: int
-    export_formats: List[str]
-    created_at: datetime
-    asset_ids: List[int] = Field(default_factory=list)
-

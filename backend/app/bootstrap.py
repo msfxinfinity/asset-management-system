@@ -1,4 +1,5 @@
 from sqlalchemy.orm import Session
+import os
 
 from app.models.department import Department, DepartmentFieldDefinition
 from app.models.role_type import RoleType
@@ -39,10 +40,40 @@ def _worker_permissions() -> dict:
 
 
 def seed_mvp_data(db: Session) -> None:
-    tenant = db.query(Tenant).filter(Tenant.id == 1).first()
+    superadmin_email = os.getenv("SUPERADMIN_EMAIL", "admin@goagile.com")
+    superadmin_password = os.getenv("SUPERADMIN_PASSWORD", "goagile123")
+    system_name = os.getenv("SYSTEM_NAME", "GoAgile")
+    system_code = os.getenv("SYSTEM_CODE", "GOA")
+
+    tenant = db.query(Tenant).filter(Tenant.code == system_code).first()
+
     if not tenant:
-        tenant = Tenant(id=1, name="GoAgile", code="GOA", serial_counter=0)
+        tenant = Tenant(
+            name=system_name, 
+            code=system_code, 
+            serial_counter=0, 
+            initial_admin_password=superadmin_password,
+            smtp_host=os.getenv("MAIL_HOST"),
+            smtp_port=int(os.getenv("MAIL_PORT", "465")),
+            smtp_user=os.getenv("MAIL_USERNAME"),
+            smtp_pass=os.getenv("MAIL_PASSWORD"),
+            smtp_from_address=os.getenv("MAIL_FROM_ADDRESS"),
+            smtp_from_name=os.getenv("MAIL_FROM_NAME"),
+            smtp_encryption=os.getenv("MAIL_ENCRYPTION", "ssl")
+        )
         db.add(tenant)
+        db.flush()
+    elif tenant.initial_admin_password is None:
+        tenant.initial_admin_password = superadmin_password
+        # Also sync SMTP if empty
+        if not tenant.smtp_host:
+            tenant.smtp_host = os.getenv("MAIL_HOST")
+            tenant.smtp_port = int(os.getenv("MAIL_PORT", "465"))
+            tenant.smtp_user = os.getenv("MAIL_USERNAME")
+            tenant.smtp_pass = os.getenv("MAIL_PASSWORD")
+            tenant.smtp_from_address = os.getenv("MAIL_FROM_ADDRESS")
+            tenant.smtp_from_name = os.getenv("MAIL_FROM_NAME")
+            tenant.smtp_encryption = os.getenv("MAIL_ENCRYPTION", "ssl")
         db.flush()
 
     admin_role = (
@@ -75,17 +106,18 @@ def seed_mvp_data(db: Session) -> None:
         db.add(worker_role)
         db.flush()
 
-    admin_user = db.query(User).filter(User.username == "admin@goagile.com").first()
+    admin_user = db.query(User).filter(User.username == superadmin_email).first()
     if not admin_user:
         db.add(
             User(
                 tenant_id=tenant.id,
                 role_type_id=admin_role.id,
-                full_name="John Doe",
-                username="admin@goagile.com",
-                email="admin@goagile.com",
-                password_hash=hash_password("goagile123"),
+                full_name=f"{system_name} Admin",
+                username=superadmin_email,
+                email=superadmin_email,
+                password_hash=hash_password(superadmin_password),
                 is_active=True,
+                is_superadmin=True,
             )
         )
 
@@ -112,29 +144,109 @@ def seed_mvp_data(db: Session) -> None:
                 label="Asset Name",
                 field_type="text",
                 required=True,
-                visible_when_blank=False,
+                visible_when_blank=True,
                 editable_by_roles=["Admin", "Worker"],
                 display_order=1,
             ),
             DepartmentFieldDefinition(
                 department_id=default_dept.id,
-                field_key="assigned_to",
-                label="Assigned To",
-                field_type="text",
-                required=False,
-                visible_when_blank=False,
+                field_key="city",
+                label="City",
+                field_type="dropdown",
+                required=True,
+                visible_when_blank=True,
                 editable_by_roles=["Admin", "Worker"],
                 display_order=2,
             ),
             DepartmentFieldDefinition(
                 department_id=default_dept.id,
-                field_key="location_text",
-                label="Location",
-                field_type="text",
-                required=False,
-                visible_when_blank=False,
+                field_key="building",
+                label="Factory/Building",
+                field_type="dropdown",
+                required=True,
+                visible_when_blank=True,
                 editable_by_roles=["Admin", "Worker"],
                 display_order=3,
+            ),
+            DepartmentFieldDefinition(
+                department_id=default_dept.id,
+                field_key="floor",
+                label="Floor",
+                field_type="dropdown",
+                required=False,
+                visible_when_blank=True,
+                editable_by_roles=["Admin", "Worker"],
+                display_order=4,
+            ),
+            DepartmentFieldDefinition(
+                department_id=default_dept.id,
+                field_key="room",
+                label="Room/Zone",
+                field_type="dropdown",
+                required=False,
+                visible_when_blank=True,
+                editable_by_roles=["Admin", "Worker"],
+                display_order=5,
+            ),
+            DepartmentFieldDefinition(
+                department_id=default_dept.id,
+                field_key="project_name",
+                label="Project",
+                field_type="dropdown",
+                required=False,
+                visible_when_blank=True,
+                editable_by_roles=["Admin", "Worker"],
+                display_order=6,
+            ),
+            DepartmentFieldDefinition(
+                department_id=default_dept.id,
+                field_key="asset_status",
+                label="Asset Status",
+                field_type="dropdown",
+                required=False,
+                visible_when_blank=True,
+                editable_by_roles=["Admin", "Worker"],
+                display_order=7,
+            ),
+            DepartmentFieldDefinition(
+                department_id=default_dept.id,
+                field_key="asset_condition",
+                label="Asset Condition",
+                field_type="dropdown",
+                required=False,
+                visible_when_blank=True,
+                editable_by_roles=["Admin", "Worker"],
+                display_order=8,
+            ),
+            DepartmentFieldDefinition(
+                department_id=default_dept.id,
+                field_key="street",
+                label="Street",
+                field_type="text",
+                required=False,
+                visible_when_blank=True,
+                editable_by_roles=["Admin", "Worker"],
+                display_order=9,
+            ),
+            DepartmentFieldDefinition(
+                department_id=default_dept.id,
+                field_key="locality",
+                label="Locality",
+                field_type="text",
+                required=False,
+                visible_when_blank=True,
+                editable_by_roles=["Admin", "Worker"],
+                display_order=10,
+            ),
+            DepartmentFieldDefinition(
+                department_id=default_dept.id,
+                field_key="postal_code",
+                label="Postal Code",
+                field_type="text",
+                required=False,
+                visible_when_blank=True,
+                editable_by_roles=["Admin", "Worker"],
+                display_order=11,
             ),
         ]
         db.add_all(base_fields)

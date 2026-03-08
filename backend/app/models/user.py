@@ -15,4 +15,7 @@ class User(Base):
     email = Column(String, nullable=False, unique=True, index=True)
     password_hash = Column(String, nullable=False)
     is_active = Column(Boolean, nullable=False, default=True)
+    is_superadmin = Column(Boolean, nullable=False, default=False)
+    failed_login_attempts = Column(Integer, nullable=False, default=0)
+    profile_picture = Column(String, nullable=True)
     created_at = Column(DateTime, default=utcnow, nullable=False)

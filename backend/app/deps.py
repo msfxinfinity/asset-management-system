@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 import jwt
-from fastapi import Depends, HTTPException, Query, status
+from fastapi import Depends, HTTPException, Query, Header, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
@@ -24,6 +24,9 @@ class CurrentUser:
     email: str
     role_name: str
     permissions: dict
+    is_superadmin: bool = False
+    profile_picture: Optional[str] = None
+    original_tenant_id: Optional[int] = None # Track the real tenant for auditing
 
     @property
     def is_admin(self) -> bool:
@@ -33,6 +36,7 @@ class CurrentUser:
 def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
     access_token: Optional[str] = Query(default=None),
+    x_tenant_id: Optional[int] = Header(None), # Allow impersonation via header
     db: Session = Depends(get_db),
 ) -> CurrentUser:
     token = credentials.credentials if credentials is not None else access_token
@@ -56,8 +60,8 @@ def get_current_user(
         ) from None
 
     user_id = payload.get("sub")
-    tenant_id = payload.get("tenant_id")
-    if not user_id or not tenant_id:
+    real_tenant_id = payload.get("tenant_id")
+    if not user_id or not real_tenant_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token payload",
@@ -67,7 +71,7 @@ def get_current_user(
         db.query(User)
         .filter(
             User.id == int(user_id),
-            User.tenant_id == int(tenant_id),
+            User.tenant_id == int(real_tenant_id),
             User.is_active.is_(True),
         )
         .first()
@@ -77,6 +81,9 @@ def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not available",
         )
+
+    # IMPERSONATION LOGIC: REMOVED (As requested)
+    effective_tenant_id = real_tenant_id
 
     role = (
         db.query(RoleType)
@@ -94,12 +101,15 @@ def get_current_user(
 
     return CurrentUser(
         id=user.id,
-        tenant_id=user.tenant_id,
+        tenant_id=effective_tenant_id, # Use impersonated tenant ID
         full_name=user.full_name,
         username=user.username,
         email=user.email,
         role_name=role.name,
         permissions=role.permissions or {},
+        is_superadmin=user.is_superadmin,
+        profile_picture=user.profile_picture,
+        original_tenant_id=real_tenant_id,
     )
 
 

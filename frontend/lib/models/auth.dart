@@ -5,6 +5,8 @@ class UserProfile {
   final String email;
   final String role;
   final Map<String, dynamic> permissions;
+  final bool isSuperadmin;
+  final String? profilePicture;
 
   UserProfile({
     required this.id,
@@ -13,6 +15,8 @@ class UserProfile {
     required this.email,
     required this.role,
     required this.permissions,
+    this.isSuperadmin = false,
+    this.profilePicture,
   });
 
   bool get isAdmin => permissions["is_admin"] == true;
@@ -27,6 +31,8 @@ class UserProfile {
       email: json["email"] as String,
       role: json["role"] as String,
       permissions: (json["permissions"] as Map<String, dynamic>?) ?? {},
+      isSuperadmin: json["is_superadmin"] as bool? ?? false,
+      profilePicture: json["profile_picture"] as String?,
     );
   }
 
@@ -38,6 +44,8 @@ class UserProfile {
       "email": email,
       "role": role,
       "permissions": permissions,
+      "is_superadmin": isSuperadmin,
+      "profile_picture": profilePicture,
     };
   }
 }

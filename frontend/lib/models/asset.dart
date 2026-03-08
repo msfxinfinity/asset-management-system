@@ -1,15 +1,20 @@
 class Asset {
   final int id;
   final String assetToken;
-  final String serialNumber;
+  final String? serialNumber;
   final int tenantId;
   final int? departmentId;
-  final String status;
   final String? assetName;
-  final String? assignedTo;
-  final String? locationText;
+  final String? city;
+  final String? building;
+  final String? floor;
+  final String? room;
+  final String? street;
+  final String? locality;
+  final String? postalCode;
   final double? latitude;
   final double? longitude;
+  final String? imageUrl;
   final DateTime? validTill;
   final DateTime createdAt;
   final Map<String, dynamic> attributes;
@@ -18,17 +23,22 @@ class Asset {
   Asset({
     required this.id,
     required this.assetToken,
-    required this.serialNumber,
     required this.tenantId,
-    required this.status,
     required this.createdAt,
     required this.attributes,
+    this.serialNumber,
     this.departmentId,
     this.assetName,
-    this.assignedTo,
-    this.locationText,
+    this.city,
+    this.building,
+    this.floor,
+    this.room,
+    this.street,
+    this.locality,
+    this.postalCode,
     this.latitude,
     this.longitude,
+    this.imageUrl,
     this.validTill,
     this.mapsUrl,
   });
@@ -37,15 +47,20 @@ class Asset {
     return Asset(
       id: json["id"] as int,
       assetToken: json["asset_token"] as String,
-      serialNumber: json["serial_number"] as String,
+      serialNumber: json["serial_number"] as String?,
       tenantId: json["tenant_id"] as int,
       departmentId: json["department_id"] as int?,
-      status: json["status"] as String,
       assetName: json["asset_name"] as String?,
-      assignedTo: json["assigned_to"] as String?,
-      locationText: json["location_text"] as String?,
+      city: json["city"] as String?,
+      building: json["building"] as String?,
+      floor: json["floor"] as String?,
+      room: json["room"] as String?,
+      street: json["street"] as String?,
+      locality: json["locality"] as String?,
+      postalCode: json["postal_code"] as String?,
       latitude: (json["latitude"] as num?)?.toDouble(),
       longitude: (json["longitude"] as num?)?.toDouble(),
+      imageUrl: json["image_url"] as String?,
       validTill: json["valid_till"] != null
           ? DateTime.tryParse(json["valid_till"] as String)
           : null,
@@ -58,23 +73,60 @@ class Asset {
 
 class AssetStats {
   final int totalAssets;
-  final int activeAssets;
-  final int archivedAssets;
-  final int unassignedAssets;
+  final List<String> cities;
+  final List<String> projectNames;
 
   const AssetStats({
     required this.totalAssets,
-    required this.activeAssets,
-    required this.archivedAssets,
-    required this.unassignedAssets,
+    required this.cities,
+    required this.projectNames,
   });
 
   factory AssetStats.fromJson(Map<String, dynamic> json) {
     return AssetStats(
       totalAssets: json["total_assets"] as int? ?? 0,
-      activeAssets: json["active_assets"] as int? ?? 0,
-      archivedAssets: json["archived_assets"] as int? ?? 0,
-      unassignedAssets: json["unassigned_assets"] as int? ?? 0,
+      cities: ((json["cities"] as List?) ?? []).map((e) => e.toString()).toList(),
+      projectNames: ((json["project_names"] as List?) ?? []).map((e) => e.toString()).toList(),
+    );
+  }
+}
+
+class AssetDropdowns {
+  final List<String> cities;
+  final List<String> buildings;
+  final List<String> floors;
+  final List<String> rooms;
+  final List<String> assetNames;
+  final List<String> projectNames;
+  final List<String> statuses;
+  final List<String> conditions;
+  final Map<String, List<String>> customAttributes;
+
+  const AssetDropdowns({
+    required this.cities,
+    required this.buildings,
+    required this.floors,
+    required this.rooms,
+    required this.assetNames,
+    required this.projectNames,
+    required this.statuses,
+    required this.conditions,
+    this.customAttributes = const {},
+  });
+
+  factory AssetDropdowns.fromJson(Map<String, dynamic> json) {
+    return AssetDropdowns(
+      cities: ((json["cities"] as List?) ?? []).map((e) => e.toString()).toList(),
+      buildings: ((json["buildings"] as List?) ?? []).map((e) => e.toString()).toList(),
+      floors: ((json["floors"] as List?) ?? []).map((e) => e.toString()).toList(),
+      rooms: ((json["rooms"] as List?) ?? []).map((e) => e.toString()).toList(),
+      assetNames: ((json["asset_names"] as List?) ?? []).map((e) => e.toString()).toList(),
+      projectNames: ((json["project_names"] as List?) ?? []).map((e) => e.toString()).toList(),
+      statuses: ((json["statuses"] as List?) ?? []).map((e) => e.toString()).toList(),
+      conditions: ((json["conditions"] as List?) ?? []).map((e) => e.toString()).toList(),
+      customAttributes: (json["custom_attributes"] as Map<String, dynamic>?)?.map(
+        (k, v) => MapEntry(k, (v as List).map((e) => e.toString()).toList()),
+      ) ?? {},
     );
   }
 }
@@ -109,56 +161,16 @@ class AssetEvent {
       geolocation: json["geolocation"] as Map<String, dynamic>?,
     );
   }
-}
-
-class DepartmentFieldDefinition {
-  final int id;
-  final int departmentId;
-  final String fieldKey;
-  final String label;
-  final String fieldType;
-  final bool required;
-  final bool visibleWhenBlank;
-  final List<String> editableByRoles;
-  final int displayOrder;
-
-  DepartmentFieldDefinition({
-    required this.id,
-    required this.departmentId,
-    required this.fieldKey,
-    required this.label,
-    required this.fieldType,
-    required this.required,
-    required this.visibleWhenBlank,
-    required this.editableByRoles,
-    required this.displayOrder,
-  });
-
-  factory DepartmentFieldDefinition.fromJson(Map<String, dynamic> json) {
-    return DepartmentFieldDefinition(
-      id: json["id"] as int,
-      departmentId: json["department_id"] as int,
-      fieldKey: json["field_key"] as String,
-      label: json["label"] as String,
-      fieldType: json["field_type"] as String,
-      required: json["required"] as bool? ?? false,
-      visibleWhenBlank: json["visible_when_blank"] as bool? ?? false,
-      editableByRoles: ((json["editable_by_roles"] as List?) ?? [])
-          .map((e) => e.toString())
-          .toList(),
-      displayOrder: json["display_order"] as int? ?? 0,
-    );
-  }
 
   Map<String, dynamic> toJson() {
     return {
-      "field_key": fieldKey,
-      "label": label,
-      "field_type": fieldType,
-      "required": required,
-      "visible_when_blank": visibleWhenBlank,
-      "editable_by_roles": editableByRoles,
-      "display_order": displayOrder,
+      "id": id,
+      "asset_id": assetId,
+      "event_type": eventType,
+      "user_id": userId,
+      "user_role": userRole,
+      "created_at": createdAt.toIso8601String(),
+      "geolocation": geolocation,
     };
   }
 }

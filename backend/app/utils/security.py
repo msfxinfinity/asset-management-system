@@ -1,13 +1,17 @@
-import hashlib
-import hmac
-import os
-
+import bcrypt
 
 def hash_password(password: str) -> str:
-    salt = os.getenv("PASSWORD_SALT", "ams-demo-salt")
-    return hashlib.sha256(f"{salt}:{password}".encode("utf-8")).hexdigest()
+    """Hashes a password using bcrypt."""
+    pwd_bytes = password.encode('utf-8')
+    salt = bcrypt.gensalt()
+    hashed_password = bcrypt.hashpw(password=pwd_bytes, salt=salt)
+    return hashed_password.decode('utf-8')
 
-
-def verify_password(password: str, password_hash: str) -> bool:
-    computed = hash_password(password)
-    return hmac.compare_digest(computed, password_hash)
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verifies a plain password against a hashed password."""
+    password_byte_enc = plain_password.encode('utf-8')
+    hashed_password_bytes = hashed_password.encode('utf-8')
+    try:
+        return bcrypt.checkpw(password=password_byte_enc, hashed_password=hashed_password_bytes)
+    except ValueError:
+        return False

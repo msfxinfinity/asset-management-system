@@ -28,5 +28,13 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSLocationUsageDescription</key>
+	<string>This app needs access to your location to automatically record asset coordinates.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>This app needs access to your location to automatically record asset coordinates.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>This app needs access to your camera to scan asset QR codes and take photos.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>This app needs access to your photo library to select asset images.</string>
 </dict>
 </plist>
