@@ -16,15 +16,14 @@ def _jwt_exp_minutes() -> int:
     return int(os.getenv("JWT_EXPIRES_MINUTES", "240"))
 
 
-def issue_token(user_id: int, tenant_id: int) -> str:
+def create_access_token(data: dict) -> str:
+    to_encode = data.copy()
     now = datetime.now(tz=timezone.utc)
-    payload = {
-        "sub": str(user_id),
-        "tenant_id": tenant_id,
+    to_encode.update({
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(minutes=_jwt_exp_minutes())).timestamp()),
-    }
-    return jwt.encode(payload, _jwt_secret(), algorithm=_jwt_algorithm())
+    })
+    return jwt.encode(to_encode, _jwt_secret(), algorithm=_jwt_algorithm())
 
 
 def issue_reset_token(user_id: int) -> str:
