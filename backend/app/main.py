@@ -109,6 +109,7 @@ app.include_router(superadmin.router)
 
 
 @app.get("/", summary="System Health Check")
+@app.get("/health", summary="System Health Check")
 def health_check() -> dict:
     """Provides a simple ping for load balancers and uptime monitoring."""
     return {"status": "operational", "version": "1.0.5"}
