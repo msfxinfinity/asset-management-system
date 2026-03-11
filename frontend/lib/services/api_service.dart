@@ -87,7 +87,7 @@ class ApiService {
 
   // --- AUTHENTICATION ENDPOINTS ---
 
-  /// Authenticats a user and initializes the session.
+  /// Authenticates a user and initializes the session.
   static Future<LoginResponse> login({
     required String username,
     required String password,
@@ -104,12 +104,22 @@ class ApiService {
       if (response.statusCode != 200) {
         throw _requestException(response);
       }
-      final payload = LoginResponse.fromJson(
-        jsonDecode(response.body) as Map<String, dynamic>,
+      
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final token = data["access_token"] as String;
+      setAccessToken(token);
+
+      // Fetch the full profile to satisfy the frontend's LoginResponse requirement
+      final user = await fetchMe();
+      
+      return LoginResponse(
+        accessToken: token,
+        tokenType: "bearer",
+        user: user,
       );
-      setAccessToken(payload.accessToken);
-      return payload;
-    } catch (e) {
+    } catch (e, stack) {
+      print("Login Error: $e");
+      print(stack);
       if (e is ApiException) rethrow;
       throw ApiException(statusCode: 0, message: "Network connection error. Please check your internet.");
     }
@@ -137,6 +147,35 @@ class ApiService {
     if (response.statusCode != 200) throw _requestException(response);
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     return data["message"] as String;
+  }
+
+  static Future<Map<String, dynamic>> checkUser(String identifier) async {
+    final response = await http.get(
+      Uri.parse("$baseUrl/auth/check-user/$identifier"),
+      headers: _headers(includeJson: false),
+    );
+    if (response.statusCode != 200) {
+      // If endpoint fails, we still allow moving to password stage for security reasons
+      return {"exists": true, "full_name": null, "profile_picture": null};
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  static Future<UserProfile> updateProfile({String? fullName, String? profilePicture}) async {
+    final body = <String, dynamic>{};
+    if (fullName != null) body["full_name"] = fullName;
+    if (profilePicture != null) body["profile_picture"] = profilePicture;
+    final response = await http.patch(Uri.parse("$baseUrl/auth/profile"), headers: _headers(), body: jsonEncode(body));
+    if (response.statusCode != 200) throw _requestException(response);
+    return UserProfile.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+  }
+
+  static Future<void> changePassword({required String oldPassword, required String newPassword}) async {
+    final response = await http.post(Uri.parse("$baseUrl/auth/change-password"), headers: _headers(), body: jsonEncode({
+      "old_password": oldPassword,
+      "new_password": newPassword,
+    }));
+    if (response.statusCode != 204 && response.statusCode != 200) throw _requestException(response);
   }
 
   // --- ASSET MANAGEMENT ENDPOINTS ---
@@ -175,6 +214,89 @@ class ApiService {
     
     final data = jsonDecode(response.body) as List<dynamic>;
     return data.map((e) => Asset.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  static Future<AssetStats> fetchStats() async {
+    final response = await http.get(Uri.parse("$baseUrl/assets/stats"), headers: _headers(includeJson: false));
+    if (response.statusCode != 200) throw _requestException(response);
+    return AssetStats.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+  }
+
+  static Future<AssetDropdowns> fetchDropdowns() async {
+    final response = await http.get(Uri.parse("$baseUrl/assets/dropdowns"), headers: _headers(includeJson: false));
+    if (response.statusCode != 200) throw _requestException(response);
+    return AssetDropdowns.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+  }
+
+  static Future<Asset> createAsset({
+    required String token,
+    required int departmentId,
+    required String assetName,
+    String? city,
+    String? building,
+    String? floor,
+    String? room,
+    String? street,
+    String? locality,
+    String? postalCode,
+    double? latitude,
+    double? longitude,
+    String? imageUrl,
+    String? imageBase64,
+    DateTime? validTill,
+    Map<String, dynamic>? attributes,
+  }) async {
+    final body = <String, dynamic>{
+      "department_id": departmentId,
+      "asset_name": assetName,
+      "asset_token": token,
+      "city": city ?? "",
+      "building": building ?? "",
+    };
+    if (floor != null) body["floor"] = floor;
+    if (room != null) body["room"] = room;
+    if (street != null) body["street"] = street;
+    if (locality != null) body["locality"] = locality;
+    if (postalCode != null) body["postal_code"] = postalCode;
+    if (latitude != null) body["latitude"] = latitude;
+    if (longitude != null) body["longitude"] = longitude;
+    if (imageUrl != null) body["image_url"] = imageUrl;
+    if (imageBase64 != null) body["image_base64"] = imageBase64;
+    if (validTill != null) body["valid_till"] = validTill.toIso8601String();
+    if (attributes != null) body["attributes"] = attributes;
+
+    final response = await http.post(
+      Uri.parse("$baseUrl/assets/"),
+      headers: _headers(),
+      body: jsonEncode(body),
+    );
+    if (response.statusCode != 201 && response.statusCode != 200) throw _requestException(response);
+    return Asset.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+  }
+
+  static Future<Asset> fetchAsset(int id) async {
+    final response = await http.get(Uri.parse("$baseUrl/assets/$id"), headers: _headers(includeJson: false));
+    if (response.statusCode != 200) throw _requestException(response);
+    return Asset.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+  }
+
+  static Future<List<DepartmentFieldDefinition>> fetchAssetFields(int id) async {
+    final response = await http.get(Uri.parse("$baseUrl/assets/$id/fields"), headers: _headers(includeJson: false));
+    if (response.statusCode != 200) throw _requestException(response);
+    final data = jsonDecode(response.body) as List<dynamic>;
+    return data.map((e) => DepartmentFieldDefinition.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  static Future<List<AssetEvent>> fetchAssetEvents(int id) async {
+    final response = await http.get(Uri.parse("$baseUrl/assets/$id/events"), headers: _headers(includeJson: false));
+    if (response.statusCode != 200) throw _requestException(response);
+    final data = jsonDecode(response.body) as List<dynamic>;
+    return data.map((e) => AssetEvent.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  static Future<void> deleteAsset(int id) async {
+    final response = await http.delete(Uri.parse("$baseUrl/assets/$id"), headers: _headers(includeJson: false));
+    if (response.statusCode != 200 && response.statusCode != 204) throw _requestException(response);
   }
 
   /// Specialized lookup for QR codes. Returns existing asset or placeholders for registration.
@@ -237,6 +359,177 @@ class ApiService {
       throw _requestException(response);
     }
     return Asset.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+  }
+
+  // --- ADMIN / SUPERADMIN ENDPOINTS ---
+
+  static Future<List<Department>> fetchDepartments() async {
+    final response = await http.get(Uri.parse("$baseUrl/admin/departments"), headers: _headers(includeJson: false));
+    if (response.statusCode != 200) throw _requestException(response);
+    final data = jsonDecode(response.body) as List<dynamic>;
+    return data.map((e) => Department.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  static Future<List<DepartmentFieldDefinition>> fetchDepartmentFields(int deptId) async {
+    final response = await http.get(Uri.parse("$baseUrl/admin/departments/$deptId/fields"), headers: _headers(includeJson: false));
+    if (response.statusCode != 200) throw _requestException(response);
+    final data = jsonDecode(response.body) as List<dynamic>;
+    return data.map((e) => DepartmentFieldDefinition.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  static Future<List<RoleType>> fetchRoles() async {
+    final response = await http.get(Uri.parse("$baseUrl/admin/roles"), headers: _headers(includeJson: false));
+    if (response.statusCode != 200) throw _requestException(response);
+    final data = jsonDecode(response.body) as List<dynamic>;
+    return data.map((e) => RoleType.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  static Future<List<AdminUser>> fetchUsers() async {
+    final response = await http.get(Uri.parse("$baseUrl/admin/users"), headers: _headers(includeJson: false));
+    if (response.statusCode != 200) throw _requestException(response);
+    final data = jsonDecode(response.body) as List<dynamic>;
+    return data.map((e) => AdminUser.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  static Future<Map<String, dynamic>> getTenantConfig() async {
+    final response = await http.get(Uri.parse("$baseUrl/admin/tenant/config"), headers: _headers(includeJson: false));
+    if (response.statusCode != 200) throw _requestException(response);
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  static Future<void> updateTenantConfig(Map<String, dynamic> config) async {
+    final response = await http.patch(Uri.parse("$baseUrl/admin/tenant/config"), headers: _headers(), body: jsonEncode(config));
+    if (response.statusCode != 200) throw _requestException(response);
+  }
+
+  static Future<List<Tenant>> fetchTenants() async {
+    final response = await http.get(Uri.parse("$baseUrl/superadmin/tenants"), headers: _headers(includeJson: false));
+    if (response.statusCode != 200) throw _requestException(response);
+    final data = jsonDecode(response.body) as List<dynamic>;
+    return data.map((e) => Tenant.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  static Future<void> createTenant({required String name, required String code, String? assetNamePrefix, required String adminEmail, required String adminPassword}) async {
+    final response = await http.post(Uri.parse("$baseUrl/superadmin/tenants"), headers: _headers(), body: jsonEncode({
+      "name": name,
+      "code": code,
+      "admin_email": adminEmail,
+      "admin_password": adminPassword,
+    }));
+    if (response.statusCode != 201 && response.statusCode != 200) throw _requestException(response);
+  }
+
+  static Future<void> deleteTenant(int id) async {
+    final response = await http.delete(Uri.parse("$baseUrl/superadmin/tenants/$id"), headers: _headers(includeJson: false));
+    if (response.statusCode != 200 && response.statusCode != 204) throw _requestException(response);
+  }
+
+  static Future<void> updateTenant(int id, String name) async {
+    final response = await http.patch(Uri.parse("$baseUrl/superadmin/tenants/$id"), headers: _headers(), body: jsonEncode({"name": name}));
+    if (response.statusCode != 200) throw _requestException(response);
+  }
+
+  static Future<String> fetchLogs(String type) async {
+    final response = await http.get(Uri.parse("$baseUrl/superadmin/logs/$type"), headers: _headers(includeJson: false));
+    if (response.statusCode != 200) throw _requestException(response);
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    return data["logs"]?.toString() ?? "";
+  }
+
+  static Future<Map<String, dynamic>> fetchTableData(String table) async {
+    final response = await http.get(Uri.parse("$baseUrl/superadmin/database/table/$table"), headers: _headers(includeJson: false));
+    if (response.statusCode != 200) throw _requestException(response);
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  static Future<List<String>> fetchTables() async {
+    final response = await http.get(Uri.parse("$baseUrl/superadmin/database/tables"), headers: _headers(includeJson: false));
+    if (response.statusCode != 200) throw _requestException(response);
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    return (data["tables"] as List).map((e) => e.toString()).toList();
+  }
+
+  static Future<void> createRole({required String name, required Map<String, dynamic> permissions}) async {
+    final response = await http.post(Uri.parse("$baseUrl/admin/roles"), headers: _headers(), body: jsonEncode({"name": name, "permissions": permissions}));
+    if (response.statusCode != 201 && response.statusCode != 200) throw _requestException(response);
+  }
+
+  static Future<void> deleteRole(int id) async {
+    final response = await http.delete(Uri.parse("$baseUrl/admin/roles/$id"), headers: _headers(includeJson: false));
+    if (response.statusCode != 204 && response.statusCode != 200) throw _requestException(response);
+  }
+
+  static Future<void> updateRole({required int roleId, required String name, required Map<String, dynamic> permissions}) async {
+    final response = await http.patch(Uri.parse("$baseUrl/admin/roles/$roleId"), headers: _headers(), body: jsonEncode({"name": name, "permissions": permissions}));
+    if (response.statusCode != 200) throw _requestException(response);
+  }
+
+  static Future<void> createUser({
+    required String fullName,
+    required String username,
+    required String email,
+    required String password,
+    required int roleTypeId,
+    bool isActive = true,
+  }) async {
+    final response = await http.post(Uri.parse("$baseUrl/admin/users"), headers: _headers(), body: jsonEncode({
+      "full_name": fullName,
+      "username": username,
+      "email": email,
+      "password": password,
+      "role_type_id": roleTypeId,
+      "is_active": isActive,
+    }));
+    if (response.statusCode != 201 && response.statusCode != 200) throw _requestException(response);
+  }
+
+  static Future<void> updateUser({
+    required int userId,
+    String? fullName,
+    String? email,
+    int? roleTypeId,
+    bool? isActive,
+  }) async {
+    final body = <String, dynamic>{};
+    if (fullName != null) body["full_name"] = fullName;
+    if (email != null) body["email"] = email;
+    if (roleTypeId != null) body["role_type_id"] = roleTypeId;
+    if (isActive != null) body["is_active"] = isActive;
+    final response = await http.patch(Uri.parse("$baseUrl/admin/users/$userId"), headers: _headers(), body: jsonEncode(body));
+    if (response.statusCode != 200) throw _requestException(response);
+  }
+
+  static Future<void> deleteUser(int id) async {
+    final response = await http.delete(Uri.parse("$baseUrl/admin/users/$id"), headers: _headers(includeJson: false));
+    if (response.statusCode != 204 && response.statusCode != 200) throw _requestException(response);
+  }
+
+  static Future<Department> createDepartment({required String name, required String code}) async {
+    final response = await http.post(Uri.parse("$baseUrl/admin/departments"), headers: _headers(), body: jsonEncode({"name": name, "code": code}));
+    if (response.statusCode != 201 && response.statusCode != 200) throw _requestException(response);
+    return Department.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+  }
+
+  static Future<void> deleteDepartmentField(int departmentId, int fieldId) async {
+    final response = await http.delete(Uri.parse("$baseUrl/admin/departments/$departmentId/fields/$fieldId"), headers: _headers(includeJson: false));
+    if (response.statusCode != 204 && response.statusCode != 200) throw _requestException(response);
+  }
+
+  static Future<void> updateDepartmentFields({required int departmentId, required List<DepartmentFieldDefinition> fields}) async {
+    final serialized = fields.map((e) => e.toJson()).toList();
+    final response = await http.put(Uri.parse("$baseUrl/admin/departments/$departmentId/fields"), headers: _headers(), body: jsonEncode({"fields": serialized}));
+    if (response.statusCode != 200) throw _requestException(response);
+  }
+
+  static Future<void> deleteDepartment(int id) async {
+    final response = await http.delete(Uri.parse("$baseUrl/admin/departments/$id"), headers: _headers(includeJson: false));
+    if (response.statusCode != 204 && response.statusCode != 200) throw _requestException(response);
+  }
+
+  static Future<Department> updateDepartment(int id, String name) async {
+    final response = await http.patch(Uri.parse("$baseUrl/admin/departments/$id"), headers: _headers(), body: jsonEncode({"name": name}));
+    if (response.statusCode != 200) throw _requestException(response);
+    return Department.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
   }
 
   // --- REPORTING ENDPOINTS ---

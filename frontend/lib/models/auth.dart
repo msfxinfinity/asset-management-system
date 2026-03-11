@@ -29,7 +29,7 @@ class UserProfile {
       fullName: json["full_name"] as String,
       username: json["username"] as String,
       email: json["email"] as String,
-      role: json["role"] as String,
+      role: (json["role_name"] ?? json["role"] ?? "Guest") as String,
       permissions: (json["permissions"] as Map<String, dynamic>?) ?? {},
       isSuperadmin: json["is_superadmin"] as bool? ?? false,
       profilePicture: json["profile_picture"] as String?,

@@ -261,62 +261,69 @@ def get_dropdowns(
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
 ):
+    import logging
+    import traceback
     from sqlalchemy import func
     tenant_id = current_user.tenant_id
     
-    def get_unique_upper(field):
-        return [r[0] for r in db.query(distinct(func.upper(field))).filter(
-            Asset.tenant_id == tenant_id, 
-            Asset.is_deleted == False,
-            field != None,
-            field != ""
-        ).all()]
-
-    asset_names = [r[0] for r in db.query(distinct(Asset.asset_name)).filter(
-        Asset.tenant_id == tenant_id,
-        Asset.is_deleted == False,
-        Asset.asset_name != None,
-        Asset.asset_name != ""
-    ).all()]
-
-    # Extract all distinct key-value pairs from the JSONB attributes in a single optimized query
-    custom_attr_dropdowns = {}
-    from sqlalchemy import text
     try:
-        query = text("""
-            SELECT key, val 
-            FROM assets, jsonb_each_text(attributes) AS kv(key, val)
-            WHERE tenant_id = :tid AND is_deleted = FALSE 
-            GROUP BY key, val
-        """)
-        res = db.execute(query, {"tid": tenant_id})
-        for row in res.fetchall():
-            k, v = row[0], row[1]
-            if v and v.strip():
-                if k not in custom_attr_dropdowns:
-                    custom_attr_dropdowns[k] = []
-                custom_attr_dropdowns[k].append(v)
-                
-        for k in custom_attr_dropdowns:
-            custom_attr_dropdowns[k] = sorted(list(set(custom_attr_dropdowns[k])))
+        def get_unique_upper(field):
+            return [r[0] for r in db.query(func.upper(field)).filter(
+                Asset.tenant_id == tenant_id, 
+                Asset.is_deleted == False,
+                field != None,
+                field != ""
+            ).distinct().all()]
+
+        asset_names = [r[0] for r in db.query(Asset.asset_name).filter(
+            Asset.tenant_id == tenant_id,
+            Asset.is_deleted == False,
+            Asset.asset_name != None,
+            Asset.asset_name != ""
+        ).distinct().all()]
+
+        # Extract all distinct key-value pairs from the JSONB attributes in a single optimized query
+        custom_attr_dropdowns = {}
+        from sqlalchemy import text
+        try:
+            query = text("""
+                SELECT key, val 
+                FROM assets, jsonb_each_text(attributes) AS kv(key, val)
+                WHERE tenant_id = :tid AND is_deleted = FALSE 
+                GROUP BY key, val
+            """)
+            res = db.execute(query, {"tid": tenant_id})
+            for row in res.fetchall():
+                k, v = row[0], row[1]
+                if v and v.strip():
+                    if k not in custom_attr_dropdowns:
+                        custom_attr_dropdowns[k] = []
+                    custom_attr_dropdowns[k].append(v)
+                    
+            for k in custom_attr_dropdowns:
+                custom_attr_dropdowns[k] = sorted(list(set(custom_attr_dropdowns[k])))
+        except Exception as e:
+            logging.error(f"Error fetching custom dropdowns: {e}")
+            logging.error(traceback.format_exc())
+
+        # Ensure project_name is always present if it exists in attributes
+        project_names = custom_attr_dropdowns.get("project_name", [])
+
+        return AssetDropdownsResponse(
+            cities=sorted(get_unique_upper(Asset.city)),
+            buildings=sorted(get_unique_upper(Asset.building)),
+            floors=sorted(get_unique_upper(Asset.floor)),
+            rooms=sorted(get_unique_upper(Asset.room)),
+            asset_names=sorted(asset_names),
+            project_names=sorted(project_names),
+            statuses=custom_attr_dropdowns.get("asset_status", []),
+            conditions=custom_attr_dropdowns.get("asset_condition", []),
+            custom_attributes=custom_attr_dropdowns
+        )
     except Exception as e:
-        import logging
-        logging.error(f"Error fetching custom dropdowns: {e}")
-
-    # Ensure project_name is always present if it exists in attributes
-    project_names = custom_attr_dropdowns.get("project_name", [])
-
-    return AssetDropdownsResponse(
-        cities=sorted(get_unique_upper(Asset.city)),
-        buildings=sorted(get_unique_upper(Asset.building)),
-        floors=sorted(get_unique_upper(Asset.floor)),
-        rooms=sorted(get_unique_upper(Asset.room)),
-        asset_names=sorted(asset_names),
-        project_names=sorted(project_names),
-        statuses=custom_attr_dropdowns.get("asset_status", []),
-        conditions=custom_attr_dropdowns.get("asset_condition", []),
-        custom_attributes=custom_attr_dropdowns
-    )
+        logging.error(f"CRITICAL Error in get_dropdowns: {e}")
+        logging.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/by-qr/{token}", response_model=AssetResponse, summary="Lookup Asset by QR")

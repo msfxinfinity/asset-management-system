@@ -15,6 +15,7 @@ from app.models.role_type import RoleType
 from app.services.jwt_tokens import create_access_token
 from app.utils.security import hash_password, verify_password
 from app.services.email import send_email, SmtpConfig
+from app.schemas.auth import UserCheckResponse, UserProfileResponse
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -82,6 +83,28 @@ def _profile_from_user(db: Session, user: User) -> dict:
     }
 
 # --- AUTHENTICATION ENDPOINTS ---
+
+@router.get("/check-user/{identifier}", response_model=UserCheckResponse, summary="Pre-Auth User Verification")
+def check_user(identifier: str, db: Session = Depends(get_db)):
+    """
+    Checks if a user exists by username or email and returns public profile metadata.
+    This is used to personalize the login screen before password entry.
+    """
+    user = db.query(User).filter(
+        or_(
+            User.username == identifier.strip().lower(),
+            User.email == identifier.strip().lower(),
+        )
+    ).first()
+    
+    if not user:
+        return UserCheckResponse(exists=False)
+    
+    return UserCheckResponse(
+        exists=True,
+        full_name=user.full_name,
+        profile_picture=user.profile_picture,
+    )
 
 @router.post("/login", response_model=LoginResponse, summary="User Authentication Gate")
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
